@@ -57,7 +57,7 @@ pyo3::create_exception!(
     "A native database operation failed. The kind attribute is litellm-db's ErrorKind, and unavailable and requeue_safe are the error's is_unavailable and is_requeue_safe."
 );
 
-fn map_error(error: litellm_db::Error) -> PyErr {
+pub(crate) fn map_error(error: litellm_db::Error) -> PyErr {
     let kind: &'static str = error.kind().into();
     let failure = NativeDatabaseFailure::new_err(litellm_error::Report::new(&error).to_string());
     let decided = Python::attach(|py| {
@@ -69,6 +69,24 @@ fn map_error(error: litellm_db::Error) -> PyErr {
     match decided {
         Ok(()) => failure,
         Err(error) => error,
+    }
+}
+
+impl NativeDatabase {
+    /// What a Rust auth repository needs to run its queries on these pools. Statements are named only when both
+    /// sides name them, since a read can land on either.
+    pub(crate) fn repository_database(&self) -> PyResult<litellm_repositories::Database> {
+        let names_statements = self.writer_endpoint.names_statements()
+            && self
+                .reader_endpoint
+                .as_ref()
+                .is_none_or(Endpoint::names_statements);
+        Ok(litellm_repositories::Database::new(
+            self.pools.clone(),
+            Arc::clone(&self.events),
+            self.writer_endpoint.socket_timeout().map_err(map_error)?,
+            names_statements,
+        ))
     }
 }
 

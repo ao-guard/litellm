@@ -5,11 +5,11 @@ import pytest
 from litellm.proxy.db.connection_budget import ConnectionBudget
 
 
-@pytest.mark.parametrize("total", range(1, 41))
-def test_default_split_leaves_prisma_the_whole_total(total: int) -> None:
+@pytest.mark.parametrize("total", range(3, 41))
+def test_default_split_reserves_two_connections_for_rust(total: int) -> None:
     budget: Final = ConnectionBudget.split(total)
 
-    assert (budget.python, budget.rust) == (total, 0)
+    assert (budget.python, budget.rust) == (total - 2, 2)
 
 
 @pytest.mark.parametrize("total", range(3, 41))
@@ -39,8 +39,8 @@ def test_a_limit_that_is_not_a_positive_integer_is_left_to_prisma(connection_lim
 def test_prisma_params_change_only_beside_a_rust_pool() -> None:
     params: Final = {"connection_limit": "010", "pool_timeout": 30}
 
-    assert ConnectionBudget.split(10).prisma_params(params) == params
-    assert ConnectionBudget.split(10, rust_reserved=2).prisma_params(params) == {
+    assert ConnectionBudget.split(10, rust_reserved=0).prisma_params(params) == params
+    assert ConnectionBudget.split(10).prisma_params(params) == {
         "connection_limit": 8,
         "pool_timeout": 30,
     }
