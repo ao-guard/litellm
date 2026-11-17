@@ -41,7 +41,7 @@ jobs:
         run: bun test litellm/scripts/flag-duplicate-issue.test.ts
 
   classify:
-    if: github.event_name != 'pull_request' && github.repository == 'BerriAI/litellm'
+    if: github.event_name != 'pull_request' && github.repository == 'ao-guard/litellm'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
