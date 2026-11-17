@@ -6,8 +6,8 @@ queries next to ported ones. These invariants hold until Prisma is gone:
 - Operators set one `connection_limit` per pool (`database_connection_pool_limit`, a URL pin or
   `database_extra_connection_params`). Nothing an operator sets names Prisma, SQLx or Rust. The Rust share
   is carved out of that limit, never added on top, so a Rust pool does not grow the connection budget.
-- The Rust share is the hard-coded `RUST_RESERVED_CONNECTIONS`. It is 0 until a ported query runs on the
-  native pool, so Prisma keeps its whole limit, untouched, and no native pool opens.
+- The Rust share is the hard-coded `RUST_RESERVED_CONNECTIONS`, sized for the auth lookups that read through
+  the Rust stores on a cache miss.
 - Only a positive integer limit is split. Any other value goes to Prisma as it is, which judges it the same
   way it did before the split existed.
 - The split is Python's. It is about Prisma and Prisma lives only in the Python gateway, so this module is
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
 
-RUST_RESERVED_CONNECTIONS: Final = 0
+RUST_RESERVED_CONNECTIONS: Final = 2
 
 
 @dataclass(frozen=True, slots=True)
