@@ -8,16 +8,18 @@ from collections.abc import Generator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, contextmanager
 from contextvars import ContextVar
 from itertools import chain
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol, TypedDict
 
 from pydantic import TypeAdapter
 
 from litellm.litellm_core_utils.core_helpers import require_attributes
 from litellm.models.user import LiteLLM_UserTable, SCIMPlaceholder
+from litellm.repositories import rust_database
 from litellm.repositories.base_repository import BaseRepository, DbRecord, record_to_dict
 from litellm.repositories.chunked_in import IN_LIST_CHUNK_SIZE
 from litellm.repositories.prisma_protocols import TableActions
 from litellm.repositories.table_repositories import PrismaTableRepository
+from litellm.rust_bridge._native import RustUserRepository
 
 if TYPE_CHECKING:
     from prisma import Prisma
@@ -50,6 +52,16 @@ def free_sso_user_creation(user_id: str | None, *, enabled: bool = True) -> Gene
         yield
     finally:
         _FREE_SSO_CREATION.reset(token)
+
+
+class SignIn(TypedDict):
+    """Who a sign-in claims to be, as the Rust user repository resolves it."""
+
+    user_id: str
+    sso_user_id: str | None
+    user_email: str | None
+    email_verified: bool | None
+    links_any_user: bool
 
 
 class _UserDb(Protocol):
@@ -108,6 +120,24 @@ class UserRepository(BaseRepository[LiteLLM_UserTable]):
 
     async def find_by_id(self, id_value: str, id_field: str = "user_id") -> LiteLLM_UserTable | None:
         return await super().find_by_id(id_value, id_field)
+
+    async def resolve_for_auth(self, sign_in: SignIn, *, use_writer: bool = False) -> LiteLLM_UserTable | None:
+        """The user a sign-in resolves to by id, SSO id or email, linking the SSO id or email it proves, or None."""
+        payload: Final = await rust_database.required_repository(RustUserRepository).resolve_user(
+            sign_in, use_writer=use_writer
+        )
+        return rust_database.decode(LiteLLM_UserTable, payload)
+
+    async def email_belongs_to_another_user(self, user_email: str, user_id: str) -> bool:
+        return await rust_database.required_repository(RustUserRepository).email_belongs_to_another_user(
+            user_email, user_id
+        )
+
+    async def backfill_null_email(self, user_id: str, user_email: str, *, links_any_user: bool) -> str | None:
+        """The email stored on ``user_id`` when its email was null and ``user_email`` was free, else None."""
+        return await rust_database.required_repository(RustUserRepository).backfill_user_email(
+            user_id, user_email, links_any_user=links_any_user
+        )
 
     async def find_by_email(self, user_email: str) -> LiteLLM_UserTable | None:
         """Find a user by email."""
